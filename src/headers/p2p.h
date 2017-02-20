@@ -26,8 +26,14 @@ typedef struct Client_Local {
 
 /** Fonctions */
 
+/** Affiche l'usage (aide) et termine le programme
+  * stream:     stream dans lequel le message sera affiché
+  * exit_code:  code de terminaison
+  */ 
+void afficheUsage(FILE* stream, const int exit_code);
+
 /** Parse une adresse IP à partir d'une string ; termine le programme si mauvaise IP
-  * str:    String contenant l'IP
+  * str:    String contenant @IP
   * IP:     Reçoit les 4 octets de l'adresse
   */
 void parseIp(const char* str, IP* ip);
@@ -35,13 +41,7 @@ void parseIp(const char* str, IP* ip);
 /** Crée récursivement un dossier ; termine le programme si erreur
   * dir:    String contenant le nom du dossier
   */
-void creeDir(char* dir);
-
-/** Affiche l'usage (aide) et termine le programme
-  * stream:     stream dans lequel le message sera affiché
-  * exit_code:  code de terminaison
-  */ 
-void afficheUsage(FILE* stream, const int exit_code);
+void creeDir(const char* dir);
 
 /* Affiche */
 

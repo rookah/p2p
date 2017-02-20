@@ -31,7 +31,7 @@ void parseIp(const char* str, IP* ip)
         }
 }
 
-void creeDir(char* dir)
+void creeDir(const char* dir)
 {
     pid_t cpid = fork();
     if (cpid == -1) {
@@ -39,13 +39,18 @@ void creeDir(char* dir)
         exit(EXIT_FAILURE);
 
     } else if (cpid == 0) {
-        char* args[4] = {"mkdir", "-p", dir, NULL};
+        char tmp[strlen(dir)]; 
+        strcpy(tmp, dir);
+        char* args[4] = {"mkdir", "-p", tmp, NULL};
         execvp("mkdir", args);
         perror("mkdir");
         exit(EXIT_FAILURE);
 
     } else {
-        waitpid(-1, NULL, 0);
+        int wstatus;
+        waitpid(-1, &wstatus, 0);
+        if (WEXITSTATUS(wstatus) == EXIT_FAILURE)
+            exit(EXIT_FAILURE);
     }
 }
 
