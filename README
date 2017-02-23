@@ -1,0 +1,20 @@
+Rendu du projet de LIFASR5 - p1410766 (Lucas Gisselaire)
+
+Installation:
+    make
+
+Usage:
+    ./p2p --help
+
+Le protocole utilisé dans les entêtes des communications est le suivant:
+TOTAL: 23 octets
+    - More (1 octet): Indique s'il reste encore un paquet à recevoir ou non.
+    - IP (4 octets): @IP de l'expéditeur du message.
+    - TTL (1 octet): Nombre de sauts restants avant d'arrêter le forwarding.
+    - Type (1 octet): Indique le type du message.
+        -> -1: Annonce déconnexion du réseau. 
+        -> 0: Heartbeat (vérification de la connexion).
+        -> 1: Demande de voisins. Les (#MAX_VOISINS * sizeof IP) premiers octets de données correspondent à la table de l'expéditeur.
+        -> 2: Recherche de fichier. Les (#TAILLE_NOM_FICHIER) premiers octets de données correspondent au nom du fichier recherché.
+        -> 3: Transfert de fichier.
+    - Taille (16 octets): Indique la taille en octets du message courant.
