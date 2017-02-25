@@ -26,6 +26,7 @@ void initInfosLocales(Infos_Locales* infos)
 {
     infos->port_client = "8888";
     infos->port_serveur = "8889";
+    infos->is_seed = 1;
     infos->seed_ip[0] = 127; infos->seed_ip[1] = 0; infos->seed_ip[2] = 0; infos->seed_ip[3] = 1;
     infos->download_dir = "~/";
 }
