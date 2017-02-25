@@ -1,10 +1,12 @@
 Rendu du projet de LIFASR5 - p1410766 (Lucas Gisselaire)
 
+
 Installation:
     make
 
 Usage:
     ./p2p --help
+    ./script-p2p.sh pour simuler un réseau de quelques machines sur le réseau local.
 
 Le protocole utilisé dans les entêtes des communications est le suivant:
 TOTAL: 23 octets
