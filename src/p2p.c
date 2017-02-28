@@ -167,7 +167,6 @@ int main(int argc, char *argv[])
         char buffer[256];
 
         if (cpid == -1 || waitpid(cpid, NULL, WNOHANG) > 0) {
-            printf("HEY\n");
             cpid = fork();
             if (cpid == -1) {
                 perror("fork");
@@ -192,7 +191,7 @@ int main(int argc, char *argv[])
                 }
                 exit(EXIT_SUCCESS);
             }
-            system("sleep 0.1");
+            system("sleep 0.2");
 
         }
     }
