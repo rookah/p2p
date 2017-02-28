@@ -1,6 +1,8 @@
 #include "headers/p2p.h"
 #include "headers/socklib.h"
 
+#include <errno.h>
+
 
 const char* program_name;
 
@@ -10,10 +12,9 @@ void afficheUsage(FILE* stream, const int exit_code)
     fprintf(stream, "Usage:  %s [options]\n", program_name);
     fprintf(stream,
             "  -h   --help          Affiche ce message d'aide.\n"
-            "  -a   --address       @IP du premier noeud contacté. (défaut: 127.0.0.1)\n"
+            "  -s   --server        @IP du premier noeud contacté. (défaut: 127.0.0.1)\n"
             "  -d   --directory     Répertoire racine de partage des fichiers. (défaut: ~/)\n"
-            "  -c   --client-port   N° du port client. (défaut: 8888)\n"
-            "  -s   --server-port   N° du port serveur. (défaut: 8889)\n");
+            "  -c   --port          N° du port utilisé. (défaut: 8888)\n");
     exit(exit_code);
 }
 
@@ -24,29 +25,10 @@ void afficheAide(FILE* stream)
 
 void initInfosLocales(Infos_Locales* infos)
 {
-    infos->port_client = "8888";
-    infos->port_serveur = "8889";
+    infos->port = "8888";
     infos->is_seed = 1;
-    infos->seed_ip[0] = 127; infos->seed_ip[1] = 0; infos->seed_ip[2] = 0; infos->seed_ip[3] = 1;
+    infos->seed_ip = "127.0.0.1";
     infos->download_dir = "~/";
-}
-
-void parseIp(const char* str, Infos_Locales* infos)
-{
-    int ip[4];
-    if (sscanf(str, "%d.%d.%d.%d", &ip[0], &ip[1], &ip[2], &ip[3]) != 4) {
-        fprintf(stderr, "Erreur lecture @IP \"%s\": Mauvais format", str);
-        exit(EXIT_FAILURE);
-    }
-
-    int i;
-    for (i = 0; i < 4; i++) {
-        if (ip[i] < 0 || ip[i] > 255) {
-            fprintf(stderr, "Erreur lecture @IP \"%s\": Mauvaise(s) valeur(s)", str);
-            exit(EXIT_FAILURE);
-        }
-        infos->seed_ip[i] = (unsigned char) ip[i];
-    }
 }
 
 void creeDir(const char* dir)
@@ -85,30 +67,32 @@ void checkPort(const char* port)
     }
 }
 
-void boucleServeur(Infos_Locales* infos)
+void demandeTableVoisins(Infos_Locales infos, IP next) {
+    int s = CreeSocketClient(next, PORT_SEED);
+    char mess[TAILLE_ENTETE];
+    sprintf(mess, FORMAT_ENTETE, 0, 1, 2, 3, 4, 19, 0, 1234567);
+    printf("%s\n", mess);
+    EnvoieMessage(s, mess);
+}
+
+void traitementServeur(Infos_Locales* infos, int sock_attente)
 {
-    /* On fork pour recevoir les requêtes en parallèle */
-    pid_t cpid = fork();
-    if (cpid == -1) {
-        perror("fork");
-        exit(EXIT_FAILURE);
-
-    } else if (cpid == 0) {
-        int sock_attente = CreeSocketServeur(infos->port_serveur);
-        if (sock_attente == -1)
+    int s;
+    pid_t cpid;
+    while ((s = TryAcceptConnexion(sock_attente)) != 0) {
+        cpid = fork();
+        if (cpid == -1) {
+            perror("fork");
             exit(EXIT_FAILURE);
-        char buff[23];
 
-        while(1) {
-            int s = AcceptConnexion(sock_attente);
-            /* Dans notre cas, le serveur reçoit d'abord un message avant d'envoyer */
-            int r = recv(s, buff, 29, MSG_WAITALL);
-            if (r == -1)
+        } else if (cpid == 0) {
+            /* Dans notre cas, le serveur reçoit toujours un message avant d'en envoyer un */
+            char b_entete[TAILLE_ENTETE];
+            int more, ip[4], TTl, type;
+            unsigned taille;
+            if (recv(s, b_entete, TAILLE_ENTETE, MSG_WAITALL) == -1)
                 perror("recv");
-            char more, TTL, type;
-            IP ip;
-            sscanf(buff, "%c %hhu %hhu %hhu %hhu %c %c", &more, &ip[0], &ip[1], &ip[2], &ip[3], &TTL, &type);
-            printf("%hhu\n", ip[3]);
+            sscanf(b_entete, FORMAT_ENTETE, &more, ip, ip+1, ip+2, ip+3, &TTl, &type, &taille);
         }
     }
 }
@@ -120,13 +104,12 @@ int main(int argc, char *argv[])
     initInfosLocales(&infos);
     program_name = argv[0];
     int option;
-    const char* const short_options = "ha:d:c:s:";
+    const char* short_options = "hs:d:p:";
     const struct option long_options[] = {
         { "help", 0, NULL, 'h' },
-        { "address", 1, NULL, 'a' },
+        { "server", 1, NULL, 's' },
         { "directory", 1, NULL, 'd' },
-        { "client-port", 1, NULL, 'c' },
-        { "server-port", 1, NULL, 's' },
+        { "port", 1, NULL, 'p' },
         { NULL, 0, NULL, 0 }
     };
 
@@ -136,8 +119,8 @@ int main(int argc, char *argv[])
             case 'h':
                 afficheUsage(stdout, EXIT_SUCCESS);
 
-            case 'a':
-                parseIp(optarg, &infos);
+            case 's':
+                infos.seed_ip = optarg;
                 infos.is_seed = 0;
                 break;
 
@@ -146,14 +129,9 @@ int main(int argc, char *argv[])
                 infos.download_dir = optarg;
                 break;
 
-            case 'c':
+            case 'p':
                 checkPort(optarg);
-                infos.port_client = optarg;
-                break;
-
-            case 's':
-                checkPort(optarg);
-                infos.port_serveur = optarg;
+                infos.port = optarg;
                 break;
 
             case '?': // Mauvaise option
@@ -169,33 +147,53 @@ int main(int argc, char *argv[])
 
     /* Initialisations client/serveur */
     if (infos.is_seed) {
+        infos.port = PORT_SEED;
         printf("Démarrage en mode noeud racine...\n");
 
     } else {
-        ;
+        demandeTableVoisins(infos, infos.seed_ip);
+        
     }
 
-    boucleServeur(&infos);
+    int sock_attente = CreeSocketServeur(infos.port);
+    if (sock_attente == -1)
+        exit(EXIT_FAILURE);
 
-    int boucle_menu = 1;
-    char buffer[256];
-    while (boucle_menu) {
-        printf("Menu principal\n");
+    pid_t cpid = -1;
 
-        while (fgets(buffer, sizeof buffer, stdin) == NULL)
-            fprintf(stderr, "Erreur lecture input (? pour aide)\n");
+    /* Boucle du programme */
+    while (1) {
+        traitementServeur(&infos, sock_attente);
+        char buffer[256];
 
-        switch(buffer[0]) {
-            case '1':
-                printf("%s\n", infos.download_dir);
-                break;
-            case '?':
-                afficheAide(stdout);
-                break;
-            default:
-                fprintf(stderr, "Erreur lecture input\n");
-                afficheAide(stderr);
-                break;
+        if (cpid == -1 || waitpid(cpid, NULL, WNOHANG) > 0) {
+            printf("HEY\n");
+            cpid = fork();
+            if (cpid == -1) {
+                perror("fork");
+                exit(EXIT_FAILURE);
+
+            } else if (cpid == 0) {
+                printf("Menu principal\n");
+                while (fgets(buffer, sizeof buffer, stdin) == NULL)
+                    fprintf(stderr, "Erreur lecture input (? pour aide)\n");
+
+                switch(buffer[0]) {
+                    case '1':
+                        printf("%s\n", infos.download_dir);
+                        break;
+                    case '?':
+                        afficheAide(stdout);
+                        break;
+                    default:
+                        fprintf(stderr, "Erreur lecture input\n");
+                        afficheAide(stderr);
+                        break;
+                }
+                exit(EXIT_SUCCESS);
+            }
+            system("sleep 0.1");
+
         }
     }
 

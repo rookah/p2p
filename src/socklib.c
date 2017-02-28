@@ -224,6 +224,61 @@ int AcceptConnexion(int s){
   return sClient;
 }
 
+int TryAcceptConnexion(int s){
+  int sClient;
+  int res;
+  int r;
+  char host[NI_MAXHOST], service[NI_MAXSERV];
+  struct sockaddr_storage tadr;
+  socklen_t tadr_len = sizeof(struct sockaddr_storage);
+
+
+  int oldattr = fcntl(s, F_GETFL);
+  if (oldattr==-1) {
+    perror("fcntl");
+    exit(1);
+  }
+  // on ajoute l'option non blocante
+  r = fcntl(s, F_SETFL, oldattr | O_NONBLOCK);
+  if (r==-1) {
+    perror("fcntl");
+    exit(1);
+  }
+  
+  
+  sClient = accept(s, (struct sockaddr*) &tadr, &tadr_len);
+  if (sClient == -1) {
+    if ((errno == EAGAIN)||(errno == EWOULDBLOCK)) {
+      // il n'y a pas de client, a priori c'est normal
+      r = fcntl(s, F_SETFL, oldattr);
+      if (r==-1) {
+	perror("fcntl");
+	exit(1);
+      }
+      return 0;
+    }
+    fprintf(stderr, "accept: %s\n", strerror(errno));
+    return -1;
+  }
+  //Nouvelle socket a fermer lors de la terminaison.
+  //addSocketTerminaison(sClient);
+
+  res = getnameinfo((struct sockaddr*) &tadr, tadr_len, host, NI_MAXHOST, service, NI_MAXSERV, NI_NUMERICSERV);
+  if(res!=0){
+    fprintf(stderr, "getnameinfo: %s\n", gai_strerror(res));
+    return -1;
+  }
+  printf("log: main: connexion depuis %s,%s\n", host, service);
+
+  r = fcntl(s, F_SETFL, oldattr);
+  if (r==-1) {
+    perror("fcntl");
+    exit(1);
+  }
+  
+  return sClient;
+}
+
 
 int RecoieEtSauveDonnees(int fd, int s) {
   char buff[TAILLE_BUFF];

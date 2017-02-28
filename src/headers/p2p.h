@@ -11,20 +11,28 @@
 
 
 /** Définitions statiques */
+#define PORT_SEED "8889"
 #define MAX_VOISINS 5
 #define TAILLE_NOM_FICHIER 100
+#define TAILLE_ENTETE 39
+#define FORMAT_ENTETE "%1d %3d %3d %3d %3d %2d %1d %16u"
 
 
 /** Définitions de types */
-typedef unsigned char IP[4];
+typedef char* IP;
+typedef char* PORT;
+
+typedef struct Infos_Pair {
+    IP ip;
+    PORT port;
+} Infos_Pair;
 
 typedef struct Infos_Locales {
     char* download_dir;
-    char* port_serveur;
-    char* port_client;
     int is_seed;
+    PORT port;
     IP seed_ip;
-    IP tab_voisins[MAX_VOISINS];
+    Infos_Pair tab_voisins[MAX_VOISINS];
 } Infos_Locales;
 
 /** Fonctions */
@@ -45,11 +53,6 @@ void afficheAide(FILE* stream);
   */
 void initInfosLocales(Infos_Locales* infos);
 
-/** Parse une adresse IP ; termine le programme si mauvaise IP
-  * str:    string contenant @IP
-  */
-void parseIp(const char* str, Infos_Locales* infos);
-
 /** Crée récursivement un dossier ; termine le programme si erreur
   * dir:    string contenant le nom du dossier
   */
@@ -63,11 +66,12 @@ void checkPort(const char* port);
 /** Rempli la table des voisins en demandant aux voisins présents dans notre propre table. Remplit la table locale au passage
   * tab_voisins:    pointeur sur tableau contenant les IP déjà présentes dans notre table
   */
-void remplirTableVoisins(IP* tab_voisins[]); 
+void demandeTableVoisins(Infos_Locales infos, IP next); 
 
-/** Crée la socket d'écoute et la boucle de traitement de requêtes
+/** Accepte les connexions entrantes et crée des forks pour les traîter
   * infos:  informations locales
+  * sock_attente:      socket d'écoute
   */
-void boucleServeur(Infos_Locales* infos);
+void traitementServeur(Infos_Locales* infos, int sock_attente);
 
 #endif /* P2P_H */

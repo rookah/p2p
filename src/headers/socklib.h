@@ -34,6 +34,13 @@ int CreeSocketClient(const char *serveur, const char* port);
 
 ///retourne la socket acceptée
 int AcceptConnexion(int s);
+/**
+ * Accept non bloquant
+ *
+ * @param s : la socket découte
+ * @return 0 s'il n'y a pas de client, -1 en cas d'erreur et la socket de dialogue s'il y a un client
+ */
+int TryAcceptConnexion(int s);
 
 /**
  * Lire les données sur une socket et les écrire automatiquement dans un descripteur de fichier
@@ -71,3 +78,4 @@ int EnvoieMessage(int s, const char* format, ...);
  *         * 1 s'il y a qqchose à lire
  */
 int TestLecture(int s);
+

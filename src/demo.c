@@ -16,9 +16,18 @@ int main(int argc, char *argv[]) {
       exit(1);
     }
 
-    // attente du client
-    s = AcceptConnexion(sock_attente);
-
+    // attente active du client
+    while (1) {
+      s = TryAcceptConnexion(sock_attente);
+      if (
+	  (s != 0)&&(s!=-1)) {
+	fprintf(stdout, "Un client !\n");
+	break;
+      }
+      
+      fprintf(stdout, "Pas de  client !\n");
+      usleep(500000);
+    }
   } else if (argc == 3){
     // Je suis le client
     server = 0;
