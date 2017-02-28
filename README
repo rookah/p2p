@@ -9,10 +9,10 @@ Usage:
     ./script-p2p.sh pour simuler un réseau de quelques machines sur le réseau local.
 
 Le protocole utilisé dans les entêtes des communications est le suivant:
-TOTAL: 33 caractères
+TOTAL: 39 (33 + 6) caractères
     - More (1 caractère): Indique s'il reste encore un paquet à recevoir ou non.
     - IP (12 caractères): @IP de l'expéditeur du message.
-    - TTL (3 caractères): Nombre de sauts restants avant d'arrêter le forwarding.
+    - TTL (2 caractères): Nombre de sauts restants avant d'arrêter le forwarding.
     - Type (1 caractère): Indique le type du message.
         -> -1: Annonce déconnexion du réseau. 
         -> 0: Heartbeat (vérification de la connexion).
