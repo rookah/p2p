@@ -16,7 +16,8 @@ TOTAL: 39 (33 + 6) caractères
     - Type (1 caractère): Indique le type du message.
         -> -1: Annonce déconnexion du réseau. 
         -> 0: Heartbeat (vérification de la connexion).
-        -> 1: Demande de voisins. Les (#MAX_VOISINS * sizeof IP) premiers octets de données correspondent à la table de l'expéditeur.
-        -> 2: Recherche de fichier. Les (#TAILLE_NOM_FICHIER) premiers octets de données correspondent au nom du fichier recherché.
-        -> 3: Transfert de fichier.
+        -> 1: Demande de table de voisins.
+        -> 2: Demande de voisin.
+        -> 3: Recherche de fichier. Les (#TAILLE_NOM_FICHIER) premiers octets de données correspondent au nom du fichier recherché.
+        -> 4: Transfert de fichier.
     - Taille (16 caractères): Indique la taille en octets du message courant.
