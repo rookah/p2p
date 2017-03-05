@@ -19,8 +19,6 @@
 
 
 /** Définitions de types */
-typedef char* IP;
-typedef char* PORT;
 
 typedef struct Infos_Pair {
     int ip[4];
@@ -30,9 +28,9 @@ typedef struct Infos_Pair {
 typedef struct Infos_Locales {
     char* download_dir;
     int is_seed;
-    PORT port;
-    IP local_ip;
-    IP seed_ip;
+    char* port;
+    char* local_ip;
+    char* seed_ip;
     Infos_Pair tab_voisins[MAX_VOISINS];
     int nb_voisins;
 } Infos_Locales;
@@ -82,23 +80,42 @@ void transformeIp(const char* ip, int tab[4]);
  * addr:   @IP à contacter
  * port:   port associé
  */
-void demandeTableVoisins(Infos_Locales* infos, const IP addr, const PORT port);
+void demandeTableVoisins(Infos_Locales* infos, const char* addr, const char* port);
 
 /** Demande à une node de devenir notre voisin
- * infos:  pointeur sur les informations locales
- * 
+ * infos:   pointeur sur les informations locales
+ * node:    informations du voisin
+ * socket:  socket déjà ouverte, ou 0 s'il n'y en a pas
  */
-void demandeVoisin(Infos_Locales* infos, const Infos_Pair node);
+void demandeVoisin(Infos_Locales* infos, const Infos_Pair node, int s);
+
+/** Demande aux voisins de répondre à un message pour vérifier leur existence
+ * infos:   pointeur sur les informations locales
+ */
+void demandeHeartbeat(Infos_Locales* infos);
 
 /** Accepte les connexions entrantes et crée des forks pour les traîter
- * infos:           informations locales
+ * infos:           pointeur sur les informations localesinformations locales
  * sock_attente:    socket d'écoute
  */
 void traitementServeur(Infos_Locales* infos, const int sock_attente);
 
 /** Traite une demande de table de voisins
+ * infos:           informations locales
  * socket: socket
  */
 void traiteDemandeTableVoisins(const Infos_Locales infos, int socket);
+
+/** Traite une demande de voisin
+ * infos:   informations locales
+ * ip:      @IP
+ * socket:  socket
+ */
+void traiteDemandeVoisin(Infos_Locales* infos, int ip[4], int socket);
+
+/** Répond à un heartbeat
+ * infos:   informations locales
+ */
+void traiteHeartbeat(int socket);
 
 #endif /* P2P_H */

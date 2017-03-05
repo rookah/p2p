@@ -83,7 +83,6 @@ void getIp(const int socket, char** ip)
     socklen_t tailleinfo = sizeof(info);
     char hname[NI_MAXHOST], sname[NI_MAXSERV];
 
-    // pour avoir sa propre IP a partir d'une socket
     res = getsockname(socket, (struct sockaddr *)&info, &tailleinfo);
     if (res == -1) {
         perror("getsockname");
@@ -106,7 +105,7 @@ void transformeIp(const char* ip, int tab[4])
     sscanf(ip, "%d.%d.%d.%d", &tab[0], &tab[1], &tab[2], &tab[3]);
 }
 
-void demandeTableVoisins(Infos_Locales* infos, IP addr, PORT port) {
+void demandeTableVoisins(Infos_Locales* infos, const char* addr, const char* port) {
     int s = CreeSocketClient(addr, port);
     if (s == -1) {
         perror("socket");
@@ -123,30 +122,29 @@ void demandeTableVoisins(Infos_Locales* infos, IP addr, PORT port) {
 
     /* On reçoit la table de voisins potentiels */
     Infos_Pair tab_voisins_potentiels[MAX_VOISINS+1];
-    if (recv(s, tab_voisins_potentiels, sizeof (Infos_Pair) * (MAX_VOISINS + 1), MSG_WAITALL) == -1)
+    if (recv(s, tab_voisins_potentiels, sizeof (tab_voisins_potentiels), MSG_WAITALL) == -1)
         perror("recv");
-
-    /* Si le noeud qu'on a contacté s'est ajouté */
-    if (tab_voisins_potentiels[MAX_VOISINS].port != 0) {
-        demandeVoisin(infos, tab_voisins_potentiels[MAX_VOISINS]);
-    }
 
     int i;
     for (i = 0; i < MAX_VOISINS; i++) {
         if (infos->nb_voisins == MAX_VOISINS)
             break;
-        if (tab_voisins_potentiels[i].port != 0)
-            demandeVoisin(infos, tab_voisins_potentiels[i]);
+        if (tab_voisins_potentiels[i].port != 0) {
+            demandeVoisin(infos, tab_voisins_potentiels[i], 0);
+        }
     }
+    if ((infos->nb_voisins != MAX_VOISINS) && (tab_voisins_potentiels[MAX_VOISINS].port != 0))
+            demandeVoisin(infos, tab_voisins_potentiels[MAX_VOISINS], s);
 }
 
-void demandeVoisin(Infos_Locales* infos, Infos_Pair node)
+void demandeVoisin(Infos_Locales* infos, Infos_Pair node, int s)
 {
     char port[6];
     char addr[16];
     sprintf(port, "%d", node.port);
     sprintf(addr, "%d.%d.%d.%d", node.ip[0], node.ip[1], node.ip[2], node.ip[3]);
-    int s = CreeSocketClient(addr, port);
+    if (s == 0)
+        s = CreeSocketClient(addr, port);
     if (s == -1) {
         perror("socket");
         exit(EXIT_FAILURE);
@@ -154,7 +152,6 @@ void demandeVoisin(Infos_Locales* infos, Infos_Pair node)
     char mess[TAILLE_ENTETE];
     sprintf(mess, FORMAT_ENTETE, 0, node.ip[0], node.ip[1], node.ip[2], node.ip[3], 0, 2, 6);
     EnvoieMessage(s, mess);
-    EnvoieMessage(s, port);
 
     int accept;
     int r = recv(s, &accept, 1, MSG_WAITALL);
@@ -164,20 +161,41 @@ void demandeVoisin(Infos_Locales* infos, Infos_Pair node)
     }
 
     if (accept) {
-        Infos_Pair new;
-        r = recv(s, &new, sizeof(Infos_Pair), MSG_WAITALL);
-        if (r == -1) {
-            perror("recv");
-            exit(EXIT_FAILURE);
-        }
+        int port_int;
+        sscanf(infos->port, "%d", &port_int);
+        EnvoieMessage(s, "%d", port_int);
         int i, j;
         for (i = 0; i < MAX_VOISINS; i++) {
             if (infos->tab_voisins[i].port == 0) {
                 for (j = 0; j < 4; j++)
-                    infos->tab_voisins[i].ip[j] = new.ip[j];
-                infos->tab_voisins[i].port = new.port;
+                    infos->tab_voisins[i].ip[j] = node.ip[j];
+                infos->tab_voisins[i].port = node.port;
                 infos->nb_voisins++;
                 break;
+            }
+        }
+    }
+}
+
+void demandeHeartbeat(Infos_Locales* infos)
+{
+    int i;
+    int s;
+    char port[6];
+    char addr[16];
+    Infos_Pair node;
+    for (i = 0; i < MAX_VOISINS; i++) {
+        node = infos->tab_voisins[i];
+        if (node.port != 0) {
+            sprintf(port, "%d", node.port);
+            sprintf(addr, "%d.%d.%d.%d", node.ip[0], node.ip[1], node.ip[2], node.ip[3]);
+
+            if ((s = CreeSocketClient(port, addr)) == -1) { //On supprime le voisin car il n'est pas joinable
+                infos->tab_voisins[i].port = 0;
+                infos->nb_voisins--;
+
+            } else {
+                close(s);
             }
         }
     }
@@ -206,13 +224,17 @@ void traitementServeur(Infos_Locales* infos, int sock_attente)
                 case -1:
                     break;
                 case 0: //heartbeat
+                    traiteHeartbeat(s);
                     break;
                 case 1: //demande de table de voisins
                     traiteDemandeTableVoisins(*infos, s);
                     break;
                 case 2:
+                    traiteDemandeVoisin(infos, ip, s);
                     break;
                 case 3:
+                    break;
+                case 4:
                     break;
                 default:
                     fprintf(stderr, "Type de demande inconnu: %d", type);
@@ -228,7 +250,7 @@ void traiteDemandeTableVoisins(const Infos_Locales infos, int socket)
     Infos_Pair tab_voisins_potentiels[MAX_VOISINS + 1];
     memcpy(tab_voisins_potentiels, infos.tab_voisins, sizeof(Infos_Pair) * MAX_VOISINS);
 
-    if (infos.nb_voisins < MAX_VOISINS) { //On s'ajoute à la liste des voisins potentiels si il nous manque des voisins
+    if (infos.nb_voisins < MAX_VOISINS) { //On s'ajoute à la liste des voisins potentiels s'il nous manque des voisins
         sscanf(infos.port, "%d", &tab_voisins_potentiels[MAX_VOISINS].port);
         sscanf(infos.local_ip, "%d.%d.%d.%d", &tab_voisins_potentiels[MAX_VOISINS].ip[0], &tab_voisins_potentiels[MAX_VOISINS].ip[1],
                 &tab_voisins_potentiels[MAX_VOISINS].ip[2], &tab_voisins_potentiels[MAX_VOISINS].ip[3]);
@@ -238,9 +260,39 @@ void traiteDemandeTableVoisins(const Infos_Locales infos, int socket)
     }
 
     /* Envoi de la table */
-    if (write(socket, tab_voisins_potentiels, sizeof(Infos_Pair) * (MAX_VOISINS + 1)) == -1) {
+    if (write(socket, tab_voisins_potentiels, sizeof(tab_voisins_potentiels)) == -1) {
         perror("write");
     }
+}
+
+void traiteDemandeVoisin(Infos_Locales* infos, int ip[4], int socket)
+{
+    if (infos->nb_voisins < MAX_VOISINS) { //On ajoute le voisin à notre table, et on lui donne notre accord pour qu'il nous ajoute
+        EnvoieMessage(socket, "%d", 1);
+        int port;
+        if (recv(socket, &port, sizeof(port), MSG_WAITALL) == -1) {
+            perror("recv");
+            exit(EXIT_FAILURE);
+        }
+        int i, j;
+        for (i = 0; i < MAX_VOISINS; i++) {
+            if (infos->tab_voisins[i].port != 0) {
+                for (j = 0; j < 4; j++)
+                    infos->tab_voisins[j].ip[j] = ip[j];
+                infos->tab_voisins[i].port = port;
+                return;
+            }
+            printf("Nouveau voisin! port: %d\n", port);
+        }
+
+    } else {
+        EnvoieMessage(socket, "%d", 0);
+    }
+}
+
+void traiteHeartbeat(int socket) {
+    EnvoieMessage(socket, "%d", 1);
+    close(socket);
 }
 
 
