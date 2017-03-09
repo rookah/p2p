@@ -79,3 +79,5 @@ int EnvoieMessage(int s, const char* format, ...);
  */
 int TestLecture(int s);
 
+
+char *fgets_nonbloquant(char *Saisi, const int taille, FILE *f);

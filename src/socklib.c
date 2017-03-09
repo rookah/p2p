@@ -83,8 +83,6 @@ int CreeSocketServeur(const char* port) {
                 fprintf(stdout, "getnameinfo: %s\n", gai_strerror(res));
                 return -1;
             }
-            printf ("La socket %d est maintenant en attente sur l'adresse %s le port %s\n",
-                    s, hname, sname); 
             break; 
         }
         else { // sinon le bind a été impossible, il faut fermer la socket
@@ -450,6 +448,35 @@ int TestLecture(int s) {
             return -2;
         }
         return -1;
+    }
+
+    return res;
+}
+
+
+char *fgets_nonbloquant(char *Saisi, const int taille, FILE *f) {
+    int oldattr = fcntl(fileno(f), F_GETFL);
+    if (oldattr==-1)
+    {
+        perror("fcntl");
+        exit(1);
+    }
+    // on ajoute l'option non blocante
+    int r = fcntl(fileno(f), F_SETFL, oldattr | O_NONBLOCK);
+    if (r==-1)
+    {
+        perror("fcntl");
+        exit(1);
+    }
+
+    char * res = fgets(Saisi,taille,stdin);
+
+
+    r = fcntl(fileno(f), F_SETFL, oldattr);
+    if (r==-1)
+    {
+        perror("fcntl");
+        exit(1);
     }
 
     return res;

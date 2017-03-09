@@ -11,7 +11,6 @@
 
 
 /** Définitions statiques */
-#define PORT_SEED "8889"
 #define MAX_VOISINS 5
 #define TAILLE_NOM_FICHIER 100
 #define TAILLE_ENTETE 39
@@ -28,9 +27,10 @@ typedef struct Infos_Pair {
 typedef struct Infos_Locales {
     char* download_dir;
     int is_seed;
-    char* port;
     char* local_ip;
+    char* local_port;
     char* seed_ip;
+    char* seed_port;
     Infos_Pair tab_voisins[MAX_VOISINS];
     int nb_voisins;
 } Infos_Locales;
@@ -64,10 +64,10 @@ void creeDir(const char* dir);
 void checkPort(const char* port);
 
 /** Récupère l'IP de la socket passée en paramètre
- * socket:   socket
- * ip:       string où on stocke l'@IP
+ * socket:  socket
+ * ->:      string contenant l'@IP
  */
-void getIp(const int socket, char** ip);
+char* getIp(const int socket);
 
 /** Transforme une IP en int
  * ip:     @IP
@@ -85,9 +85,8 @@ void demandeTableVoisins(Infos_Locales* infos, const char* addr, const char* por
 /** Demande à une node de devenir notre voisin
  * infos:   pointeur sur les informations locales
  * node:    informations du voisin
- * socket:  socket déjà ouverte, ou 0 s'il n'y en a pas
  */
-void demandeVoisin(Infos_Locales* infos, const Infos_Pair node, int s);
+void demandeVoisin(Infos_Locales* infos, const Infos_Pair node);
 
 /** Demande aux voisins de répondre à un message pour vérifier leur existence
  * infos:   pointeur sur les informations locales

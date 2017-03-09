@@ -13,8 +13,9 @@ void afficheUsage(FILE* stream, const int exit_code)
     fprintf(stream,
             "  -h   --help          Affiche ce message d'aide.\n"
             "  -s   --server        @IP du premier noeud contacté. (défaut: 127.0.0.1)\n"
-            "  -d   --directory     Répertoire racine de partage des fichiers. (défaut: ~/)\n"
-            "  -c   --port          N° du port utilisé. (défaut: 8888)\n");
+            "  -p   --server-port   N° du port du premier noeud contacté. (défaut: 8888)\n"
+            "  -P   --port          N° du port utilisé. (défaut: 8889)\n"
+            "  -d   --directory     Répertoire racine de partage des fichiers. (défaut: ~/)\n");
     exit(exit_code);
 }
 
@@ -25,17 +26,17 @@ void afficheAide(FILE* stream)
 
 void initInfosLocales(Infos_Locales* infos)
 {
-    infos->port = "8889";
-    infos->is_seed = 1;
+    infos->local_ip = infos->seed_ip;
+    infos->local_port = "8889";
     infos->seed_ip = "127.0.0.1";
+    infos->seed_port = "8888";
+    infos->is_seed = 1;
     infos->download_dir = "~/";
     infos->nb_voisins = 0;
-    int i;
+    int i, j;
     for (i = 0; i < MAX_VOISINS; i++) {
-        infos->tab_voisins[i].ip[0] = 0;
-        infos->tab_voisins[i].ip[1] = 0;
-        infos->tab_voisins[i].ip[2] = 0;
-        infos->tab_voisins[i].ip[3] = 0;
+        for (j = 0; j < 4; j++)
+            infos->tab_voisins[i].ip[j] = 0;
         infos->tab_voisins[i].port = 0;
     }
 }
@@ -76,7 +77,7 @@ void checkPort(const char* port)
     }
 }
 
-void getIp(const int socket, char** ip)
+char* getIp(const int socket)
 {
     int res;
     struct addrinfo info;
@@ -97,7 +98,9 @@ void getIp(const int socket, char** ip)
         exit(1);
     }
 
-    *ip = hname;
+    char* ret = (char*) malloc(sizeof(hname));
+    ret = hname;
+    return ret;
 }
 
 void transformeIp(const char* ip, int tab[4])
@@ -106,63 +109,82 @@ void transformeIp(const char* ip, int tab[4])
 }
 
 void demandeTableVoisins(Infos_Locales* infos, const char* addr, const char* port) {
+    if (port == infos->local_port)
+        return;
     int s = CreeSocketClient(addr, port);
     if (s == -1) {
-        perror("socket");
-        exit(EXIT_FAILURE);
+        fprintf(stderr, "warning: %s déconnecté du réseau\n", addr);
+        return;
     }
 
-    getIp(s, &infos->local_ip);
+    infos->local_ip = getIp(s);
     int ip[4];
     transformeIp(infos->local_ip, ip);
 
-    char mess[TAILLE_ENTETE];
-    sprintf(mess, FORMAT_ENTETE, 0, ip[0], ip[1], ip[2], ip[3], 0, 1, 0);
-    EnvoieMessage(s, mess);
+    EnvoieMessage(s, FORMAT_ENTETE, 0, ip[0], ip[1], ip[2], ip[3], 0, 1, 0);
+    
 
     /* On reçoit la table de voisins potentiels */
     Infos_Pair tab_voisins_potentiels[MAX_VOISINS+1];
-    if (recv(s, tab_voisins_potentiels, sizeof (tab_voisins_potentiels), MSG_WAITALL) == -1)
+    int si;
+    if ((si = recv(s, tab_voisins_potentiels, sizeof (tab_voisins_potentiels), MSG_WAITALL)) == -1)
         perror("recv");
 
     int i;
-    for (i = 0; i < MAX_VOISINS; i++) {
+    for (i = 0; i < MAX_VOISINS + 1; i++) {
         if (infos->nb_voisins == MAX_VOISINS)
             break;
         if (tab_voisins_potentiels[i].port != 0) {
-            demandeVoisin(infos, tab_voisins_potentiels[i], 0);
+            demandeVoisin(infos, tab_voisins_potentiels[i]);
         }
     }
-    if ((infos->nb_voisins != MAX_VOISINS) && (tab_voisins_potentiels[MAX_VOISINS].port != 0))
-            demandeVoisin(infos, tab_voisins_potentiels[MAX_VOISINS], s);
+
+    if (infos->nb_voisins == 0) { //On recommence avec les entrées de la table de voisins si on n'a pas de voisin
+        char addr2[16], port2[6];
+        for (i = 0; i < MAX_VOISINS; i++) {
+            if (tab_voisins_potentiels[i].port != 0) {
+                sprintf(addr2, "%d.%d.%d.%d", tab_voisins_potentiels[i].ip[0], tab_voisins_potentiels[i].ip[0],
+                        tab_voisins_potentiels[i].ip[2], tab_voisins_potentiels[i].ip[3]);
+                sprintf(port2, "%d", tab_voisins_potentiels[i].port);
+                demandeTableVoisins(infos, addr2, port2);
+                if (infos->nb_voisins != 0)
+                    break;
+            }
+        }
+    }
+    close(s);
 }
 
-void demandeVoisin(Infos_Locales* infos, Infos_Pair node, int s)
+void demandeVoisin(Infos_Locales* infos, Infos_Pair node)
 {
+    if (node.port == atoi(infos->local_port))
+        return;
     char port[6];
-    char addr[16];
     sprintf(port, "%d", node.port);
-    sprintf(addr, "%d.%d.%d.%d", node.ip[0], node.ip[1], node.ip[2], node.ip[3]);
-    if (s == 0)
-        s = CreeSocketClient(addr, port);
-    if (s == -1) {
-        perror("socket");
-        exit(EXIT_FAILURE);
-    }
-    char mess[TAILLE_ENTETE];
-    sprintf(mess, FORMAT_ENTETE, 0, node.ip[0], node.ip[1], node.ip[2], node.ip[3], 0, 2, 6);
-    EnvoieMessage(s, mess);
 
-    int accept;
-    int r = recv(s, &accept, 1, MSG_WAITALL);
+    char addr[16];
+    sprintf(addr, "%d.%d.%d.%d", node.ip[0], node.ip[1], node.ip[2], node.ip[3]);
+
+    int s = CreeSocketClient(addr, port);
+    if (s == -1)
+        return;
+
+    infos->local_ip = getIp(s);
+    int ip[4];
+    transformeIp(infos->local_ip, ip);
+
+    EnvoieMessage(s, FORMAT_ENTETE, 0, ip[0], ip[1], ip[2], ip[3], 0, 2, 6);
+
+    char accept[2];
+    int r = recv(s, accept, sizeof(char), MSG_WAITALL);
     if (r == -1) {
         perror("recv");
         exit(EXIT_FAILURE);
     }
 
-    if (accept) {
+    if (atoi(accept)) {
         int port_int;
-        sscanf(infos->port, "%d", &port_int);
+        sscanf(infos->local_port, "%d", &port_int);
         EnvoieMessage(s, "%d", port_int);
         int i, j;
         for (i = 0; i < MAX_VOISINS; i++) {
@@ -171,10 +193,13 @@ void demandeVoisin(Infos_Locales* infos, Infos_Pair node, int s)
                     infos->tab_voisins[i].ip[j] = node.ip[j];
                 infos->tab_voisins[i].port = node.port;
                 infos->nb_voisins++;
+                printf("Nouveau voisin! @IP: %d.%d.%d.%d\n", infos->tab_voisins[i].ip[0],
+                        infos->tab_voisins[i].ip[1], infos->tab_voisins[i].ip[2], infos->tab_voisins[i].ip[3]);
                 break;
             }
         }
     }
+    close(s);
 }
 
 void demandeHeartbeat(Infos_Locales* infos)
@@ -204,43 +229,40 @@ void demandeHeartbeat(Infos_Locales* infos)
 void traitementServeur(Infos_Locales* infos, int sock_attente)
 {
     int s;
-    pid_t cpid;
+    // On ne fork pas pour conserver les infos locales modifiées
     while ((s = TryAcceptConnexion(sock_attente)) != 0) {
-        cpid = fork();
-        if (cpid == -1) {
-            perror("fork");
+        if (s == -1) {
+            perror("socket");
             exit(EXIT_FAILURE);
+        }
+        char b_entete[TAILLE_ENTETE];
+        int more, ip[4], TTL, type;
+        unsigned taille;
+        if (recv(s, b_entete, TAILLE_ENTETE, MSG_WAITALL) == -1) {
+            perror("recv");
+            continue;
+        }
+        sscanf(b_entete, FORMAT_ENTETE, &more, ip, ip+1, ip+2, ip+3, &TTL, &type, &taille);
 
-        } else if (cpid == 0) {
-            /* Dans notre cas, le serveur reçoit toujours un message avant d'en envoyer un */
-            char b_entete[TAILLE_ENTETE];
-            int more, ip[4], TTL, type;
-            unsigned taille;
-            if (recv(s, b_entete, TAILLE_ENTETE, MSG_WAITALL) == -1)
-                perror("recv");
-            sscanf(b_entete, FORMAT_ENTETE, &more, ip, ip+1, ip+2, ip+3, &TTL, &type, &taille);
-
-            switch(type) {
-                case -1:
-                    break;
-                case 0: //heartbeat
-                    traiteHeartbeat(s);
-                    break;
-                case 1: //demande de table de voisins
-                    traiteDemandeTableVoisins(*infos, s);
-                    break;
-                case 2:
-                    traiteDemandeVoisin(infos, ip, s);
-                    break;
-                case 3:
-                    break;
-                case 4:
-                    break;
-                default:
-                    fprintf(stderr, "Type de demande inconnu: %d", type);
-                    exit(EXIT_FAILURE);
-            }
-            exit(EXIT_SUCCESS);
+        switch(type) {
+            case -1:
+                break;
+            case 0: //heartbeat
+                traiteHeartbeat(s);
+                break;
+            case 1: //demande de table de voisins
+                traiteDemandeTableVoisins(*infos, s);
+                break;
+            case 2:
+                traiteDemandeVoisin(infos, ip, s);
+                break;
+            case 3:
+                break;
+            case 4:
+                break;
+            default:
+                fprintf(stderr, "Type de demande inconnu: %d", type);
+                exit(EXIT_FAILURE);
         }
     }
 }
@@ -251,8 +273,12 @@ void traiteDemandeTableVoisins(const Infos_Locales infos, int socket)
     memcpy(tab_voisins_potentiels, infos.tab_voisins, sizeof(Infos_Pair) * MAX_VOISINS);
 
     if (infos.nb_voisins < MAX_VOISINS) { //On s'ajoute à la liste des voisins potentiels s'il nous manque des voisins
-        sscanf(infos.port, "%d", &tab_voisins_potentiels[MAX_VOISINS].port);
-        sscanf(infos.local_ip, "%d.%d.%d.%d", &tab_voisins_potentiels[MAX_VOISINS].ip[0], &tab_voisins_potentiels[MAX_VOISINS].ip[1],
+        sscanf(infos.local_port, "%d", &tab_voisins_potentiels[MAX_VOISINS].port);
+
+        /* On donne l'adresse IP utilisée pour la socket */
+        char* local_ip_socket = infos.local_ip;
+        local_ip_socket = getIp(socket);
+        sscanf(local_ip_socket, "%d.%d.%d.%d", &tab_voisins_potentiels[MAX_VOISINS].ip[0], &tab_voisins_potentiels[MAX_VOISINS].ip[1],
                 &tab_voisins_potentiels[MAX_VOISINS].ip[2], &tab_voisins_potentiels[MAX_VOISINS].ip[3]);
 
     } else {
@@ -268,31 +294,32 @@ void traiteDemandeTableVoisins(const Infos_Locales infos, int socket)
 void traiteDemandeVoisin(Infos_Locales* infos, int ip[4], int socket)
 {
     if (infos->nb_voisins < MAX_VOISINS) { //On ajoute le voisin à notre table, et on lui donne notre accord pour qu'il nous ajoute
-        EnvoieMessage(socket, "%d", 1);
-        int port;
-        if (recv(socket, &port, sizeof(port), MSG_WAITALL) == -1) {
+        EnvoieMessage(socket, "1");
+        char port_string[6];
+        if (recv(socket, port_string, sizeof(port_string), MSG_WAITALL) == -1) {
             perror("recv");
             exit(EXIT_FAILURE);
         }
+        int port = atoi(port_string);
         int i, j;
         for (i = 0; i < MAX_VOISINS; i++) {
-            if (infos->tab_voisins[i].port != 0) {
+            if (infos->tab_voisins[i].port == 0) {
                 for (j = 0; j < 4; j++)
                     infos->tab_voisins[j].ip[j] = ip[j];
                 infos->tab_voisins[i].port = port;
-                return;
+                infos->nb_voisins++;
+                printf("Nouveau voisin! @IP: %d.%d.%d.%d\n", ip[0], ip[1], ip[2], ip[3]); 
+                break;
             }
-            printf("Nouveau voisin! port: %d\n", port);
         }
 
     } else {
-        EnvoieMessage(socket, "%d", 0);
+        EnvoieMessage(socket, "0");
     }
 }
 
 void traiteHeartbeat(int socket) {
-    EnvoieMessage(socket, "%d", 1);
-    close(socket);
+    //EnvoieMessage(socket, "%d", 1);
 }
 
 
@@ -302,10 +329,11 @@ int main(int argc, char *argv[])
     initInfosLocales(&infos);
     program_name = argv[0];
     int option;
-    const char* short_options = "hs:d:p:";
+    const char* short_options = "hs:p:P:d:";
     const struct option long_options[] = {
         { "help", 0, NULL, 'h' },
         { "server", 1, NULL, 's' },
+        { "server-port", 1, NULL, 's' },
         { "directory", 1, NULL, 'd' },
         { "port", 1, NULL, 'p' },
         { NULL, 0, NULL, 0 }
@@ -322,14 +350,19 @@ int main(int argc, char *argv[])
                 infos.is_seed = 0;
                 break;
 
+            case 'p':
+                checkPort(optarg);
+                infos.seed_port = optarg;
+                break;
+
+            case 'P':
+                checkPort(optarg);
+                infos.local_port = optarg;
+                break;
+
             case 'd':
                 creeDir(optarg);
                 infos.download_dir = optarg;
-                break;
-
-            case 'p':
-                checkPort(optarg);
-                infos.port = optarg;
                 break;
 
             case '?': // Mauvaise option
@@ -344,53 +377,60 @@ int main(int argc, char *argv[])
     } while (option != -1);
 
     /* Initialisations client/serveur */
-    int sock_attente = CreeSocketServeur(infos.port);
+    if (infos.is_seed) {
+        printf("Démarrage en mode noeud racine...\n");
+        infos.local_port = infos.seed_port;
+
+    } else {
+        demandeTableVoisins(&infos, infos.seed_ip, infos.seed_port);
+    }
+
+    int sock_attente = CreeSocketServeur(infos.local_port);
     if (sock_attente == -1)
         exit(EXIT_FAILURE);
 
-    if (infos.is_seed) {
-        infos.port = PORT_SEED;
-        printf("Démarrage en mode noeud racine...\n");
-
-    } else {
-        printf("Demande de voisins en cours...\n");
-        demandeTableVoisins(&infos, infos.seed_ip, PORT_SEED);
-    }
 
     /* Boucle du programme */
-    pid_t cpid = -1;
+    int menu_principal = 1;
     while (1) {
+        if (!infos.is_seed && infos.nb_voisins == 0)
+            demandeTableVoisins(&infos, infos.seed_ip, infos.seed_port);
         traitementServeur(&infos, sock_attente);
-        char buffer[256];
-
-        if (cpid == -1 || waitpid(cpid, NULL, WNOHANG) > 0) {
-            cpid = fork();
-            if (cpid == -1) {
-                perror("fork");
-                exit(EXIT_FAILURE);
-
-            } else if (cpid == 0) {
-                printf("Menu principal\n");
-                while (fgets(buffer, sizeof buffer, stdin) == NULL)
-                    fprintf(stderr, "Erreur lecture input (? pour aide)\n");
-
-                switch(buffer[0]) {
-                    case '1':
-                        printf("%s\n", infos.download_dir);
-                        break;
-                    case '?':
-                        afficheAide(stdout);
-                        break;
-                    default:
-                        fprintf(stderr, "Erreur lecture input\n");
-                        afficheAide(stderr);
-                        break;
-                }
-                exit(EXIT_SUCCESS);
-            }
-
-            system("sleep 0.2");
+        if (menu_principal) {
+            printf("Menu principal\n");
+            menu_principal = 0;
         }
+        char buffer[256];
+        buffer[0] = '\0';
+
+        if (fgets_nonbloquant(buffer, sizeof buffer, stdin) != NULL) {
+            menu_principal = 1;
+            switch(buffer[0]) {
+                case 'd':
+                    printf("Répertoire partagé: %s\n", infos.download_dir);
+                    break;
+
+                case 'v':
+                    printf("Nombre de voisins: %d\n", infos.nb_voisins);
+                    break;
+
+                case '\n':
+                    break;
+
+                case '?':
+                    afficheAide(stdout);
+                    break;
+
+                case 'q':
+                    exit(EXIT_SUCCESS);
+
+                default:
+                    fprintf(stderr, "Erreur lecture input\n");
+                    afficheAide(stderr);
+                    break;
+            }
+        }
+        usleep(500000);
     }
 
     return 0;
