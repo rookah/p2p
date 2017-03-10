@@ -112,9 +112,12 @@ void traiteDemandeTableVoisins(const Infos_Locales infos, int socket);
  */
 void traiteDemandeVoisin(Infos_Locales* infos, int ip[4], int socket);
 
-/** Répond à un heartbeat
+/** Traite une annonce de déconnexion
  * infos:   informations locales
+ * ip:      @IP
+ * socket:  socket
  */
-void traiteHeartbeat(int socket);
+void deleteVoisin(Infos_Locales* infos, int ip[4], int socket);
+
 
 #endif /* P2P_H */

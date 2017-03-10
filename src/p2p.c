@@ -21,7 +21,13 @@ void afficheUsage(FILE* stream, const int exit_code)
 
 void afficheAide(FILE* stream)
 {
-    fprintf(stream, "AIDE ICI～\n");
+    fprintf(stream,
+            "   d   Affiche le répertoire de téléchargement\n"
+            "   v   Affiche la table de voisins\n"
+            "   +   Ajoute 5 secondes à l'intervalle du heartbeat (max. 2min)\n"
+            "   -   Enlève 5 secondes de l'intervalle du heartbeat (min. 5sec)\n"
+            "   ?   Affiche cette aide"
+            "   q   Quitte le programme");
 }
 
 void initInfosLocales(Infos_Locales* infos)
@@ -122,7 +128,7 @@ void demandeTableVoisins(Infos_Locales* infos, const char* addr, const char* por
     transformeIp(infos->local_ip, ip);
 
     EnvoieMessage(s, FORMAT_ENTETE, 0, ip[0], ip[1], ip[2], ip[3], 0, 1, 0);
-    
+
 
     /* On reçoit la table de voisins potentiels */
     Infos_Pair tab_voisins_potentiels[MAX_VOISINS+1];
@@ -204,23 +210,50 @@ void demandeVoisin(Infos_Locales* infos, Infos_Pair node)
 
 void demandeHeartbeat(Infos_Locales* infos)
 {
-    int i;
-    int s;
+    int i, s;
     char port[6];
     char addr[16];
     Infos_Pair node;
     for (i = 0; i < MAX_VOISINS; i++) {
-        node = infos->tab_voisins[i];
-        if (node.port != 0) {
+        if (infos->tab_voisins[i].port != 0) {
+            node = infos->tab_voisins[i];
             sprintf(port, "%d", node.port);
             sprintf(addr, "%d.%d.%d.%d", node.ip[0], node.ip[1], node.ip[2], node.ip[3]);
 
-            if ((s = CreeSocketClient(port, addr)) == -1) { //On supprime le voisin car il n'est pas joinable
+            if ((s = CreeSocketClient(addr, port)) == -1) { //On supprime le voisin car il n'est pas joinable
                 infos->tab_voisins[i].port = 0;
                 infos->nb_voisins--;
+                printf("Voisin %d.%d.%d.%d/%d déconnecté\n", node.ip[0], node.ip[1], node.ip[2], node.ip[3], node.port);
 
             } else {
                 close(s);
+            }
+        }
+    }
+}
+
+void demandeDeconnexion(const Infos_Locales infos) {
+    int i, s;
+    char port[6];
+    char addr[16];
+    pid_t cpid;
+    for (i = 0; i < MAX_VOISINS; i++) {
+        if (infos.tab_voisins[i].port != 0) {
+            cpid = fork();
+            if (cpid == -1) {
+                perror("fork");
+                exit(EXIT_FAILURE);
+
+            } else if (cpid == 0) {
+                Infos_Pair node = infos.tab_voisins[i];
+                sprintf(port, "%d", node.port);
+                sprintf(addr, "%d.%d.%d.%d", node.ip[0], node.ip[1], node.ip[2], node.ip[3]);
+                if ((s = CreeSocketClient(addr, port)) == -1) {
+                    fprintf(stderr, "warning: %s déconnecté du réseau\n", addr);
+                    continue;
+                }
+
+                exit(EXIT_SUCCESS);
             }
         }
     }
@@ -246,14 +279,14 @@ void traitementServeur(Infos_Locales* infos, int sock_attente)
 
         switch(type) {
             case -1:
+                deleteVoisin(infos, ip, s);
                 break;
-            case 0: //heartbeat
-                traiteHeartbeat(s);
+            case 0:
                 break;
             case 1: //demande de table de voisins
                 traiteDemandeTableVoisins(*infos, s);
                 break;
-            case 2:
+            case 2: //traitement de voisin
                 traiteDemandeVoisin(infos, ip, s);
                 break;
             case 3:
@@ -261,9 +294,9 @@ void traitementServeur(Infos_Locales* infos, int sock_attente)
             case 4:
                 break;
             default:
-                fprintf(stderr, "Type de demande inconnu: %d", type);
-                exit(EXIT_FAILURE);
+                break;
         }
+        close(s);
     }
 }
 
@@ -305,7 +338,7 @@ void traiteDemandeVoisin(Infos_Locales* infos, int ip[4], int socket)
         for (i = 0; i < MAX_VOISINS; i++) {
             if (infos->tab_voisins[i].port == 0) {
                 for (j = 0; j < 4; j++)
-                    infos->tab_voisins[j].ip[j] = ip[j];
+                    infos->tab_voisins[i].ip[j] = ip[j];
                 infos->tab_voisins[i].port = port;
                 infos->nb_voisins++;
                 printf("Nouveau voisin! @IP: %d.%d.%d.%d\n", ip[0], ip[1], ip[2], ip[3]); 
@@ -318,10 +351,15 @@ void traiteDemandeVoisin(Infos_Locales* infos, int ip[4], int socket)
     }
 }
 
-void traiteHeartbeat(int socket) {
-    //EnvoieMessage(socket, "%d", 1);
+void deleteVoisin(Infos_Locales* infos, int ip[4], int socket)
+{
+        char port_string[6];
+        if (recv(socket, port_string, sizeof(port_string), MSG_WAITALL) == -1) {
+            perror("recv");
+            exit(EXIT_FAILURE);
+        }
+        int port = atoi(port_string);
 }
-
 
 int main(int argc, char *argv[])
 {
@@ -391,8 +429,13 @@ int main(int argc, char *argv[])
 
 
     /* Boucle du programme */
+    int compteur = 0;
+    int t = 20;
     int menu_principal = 1;
     while (1) {
+        compteur = (compteur + 1) % t;
+        if (!compteur)
+            demandeHeartbeat(&infos);
         if (!infos.is_seed && infos.nb_voisins == 0)
             demandeTableVoisins(&infos, infos.seed_ip, infos.seed_port);
         traitementServeur(&infos, sock_attente);
@@ -412,6 +455,19 @@ int main(int argc, char *argv[])
 
                 case 'v':
                     printf("Nombre de voisins: %d\n", infos.nb_voisins);
+                    int i, j = 1;
+                    for (i = 0; i < MAX_VOISINS; i++) {
+                        if (infos.tab_voisins[i].port != 0)
+                            printf("Voisin %d: %d.%d.%d.%d/%d\n", j++, infos.tab_voisins[i].ip[0], infos.tab_voisins[i].ip[1], infos.tab_voisins[i].ip[2], infos.tab_voisins[i].ip[3], infos.tab_voisins[i].port);
+                    }
+                    break;
+                case '+':
+                    t += 10;
+                    break;
+
+                case '-':
+                    if (t > 10)
+                        t -= 10;
                     break;
 
                 case '\n':
